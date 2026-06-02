@@ -3,13 +3,14 @@ package common
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"maps"
 	"os"
 	"time"
 
-	kubeCl "github.com/conforma/e2e-tests/e2e-tests/pkg/clients/kubernetes"
-	"github.com/conforma/e2e-tests/e2e-tests/pkg/constants"
+	kubeCl "github.com/conforma/e2e-tests/pkg/clients/kubernetes"
+	"github.com/conforma/e2e-tests/pkg/constants"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	k8sErrors "k8s.io/apimachinery/pkg/api/errors"
@@ -92,9 +93,13 @@ func (s *SuiteController) CreateQuayRegistrySecret(namespace string) error {
 		if quayToken == "" {
 			return fmt.Errorf("failed to obtain quay token from 'QUAY_TOKEN' env; make sure the env var exists")
 		}
-		dockerConfigJsonData, err = base64.StdEncoding.DecodeString(quayToken)
-		if err != nil {
-			return fmt.Errorf("failed to decode quay token: make sure QUAY_TOKEN contains a base64 token")
+		decoded, decErr := base64.StdEncoding.DecodeString(quayToken)
+		if decErr == nil && json.Valid(decoded) {
+			dockerConfigJsonData = decoded
+		} else if json.Valid([]byte(quayToken)) {
+			dockerConfigJsonData = []byte(quayToken)
+		} else {
+			return fmt.Errorf("QUAY_TOKEN is not valid docker config JSON (either raw or base64-encoded)")
 		}
 	} else {
 		dockerConfigJsonData = sharedSecret.Data[".dockerconfigjson"]

@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/conforma/e2e-tests/e2e-tests/pkg/utils/tekton"
+	"github.com/conforma/e2e-tests/pkg/utils/tekton"
 	g "github.com/onsi/ginkgo/v2"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"

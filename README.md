@@ -110,14 +110,13 @@ The test suite uses the [Ginkgo](https://onsi.github.io/ginkgo/) framework and i
 If you already have a Konflux cluster running:
 
 ```bash
-cd e2e-tests
 export KUBECONFIG=/path/to/your/kubeconfig
 export QUAY_TOKEN="$(base64 -w0 < ~/.docker/config.json)"
 export TEST_ENVIRONMENT=upstream
 go run github.com/onsi/ginkgo/v2/ginkgo -v --label-filter="ec" ./cmd
 ```
 
-Or using the Makefile from the repository root:
+Or using the Makefile:
 
 ```bash
 export KUBECONFIG=/path/to/your/kubeconfig
@@ -140,19 +139,18 @@ make test-e2e
 ### Project structure
 
 ```
-e2e-tests/
-  cmd/e2e_test.go                      # Test entrypoint and BeforeSuite setup
-  tests/contract/contract.go           # Enterprise Contract test scenarios
-  pkg/
-    clients/
-      common/controller.go             # Kubernetes helper operations
-      kubernetes/client.go             # K8s client initialization
-      tekton/                          # Tekton-specific clients (bundles, chains, ECP, pipelines, signing)
-    constants/constants.go             # Shared constants and timeouts
-    framework/                         # Test framework (namespace creation, RBAC, reporting)
-    utils/
-      contract/policy.go               # ECP policy helpers
-      tekton/                          # Pipeline generators, matchers, cosign utilities
+cmd/e2e_test.go                        # Test entrypoint and BeforeSuite setup
+tests/contract/contract.go             # Enterprise Contract test scenarios
+pkg/
+  clients/
+    common/controller.go               # Kubernetes helper operations
+    kubernetes/client.go               # K8s client initialization
+    tekton/                            # Tekton-specific clients (bundles, chains, ECP, pipelines, signing)
+  constants/constants.go               # Shared constants and timeouts
+  framework/                           # Test framework (namespace creation, RBAC, reporting)
+  utils/
+    contract/policy.go                 # ECP policy helpers
+    tekton/                            # Pipeline generators, matchers, cosign utilities
 .tekton/
   pipelines/conforma-e2e/pipeline.yaml # Tekton Pipeline for full CI execution
   conforma-e2e-pull-request.yaml       # PipelineRun trigger for pull requests

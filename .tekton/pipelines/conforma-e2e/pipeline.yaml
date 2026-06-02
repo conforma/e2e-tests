@@ -211,7 +211,6 @@ spec:
               git checkout "${GIT_REVISION}"
 
               # Prepare Go toolchain and Ginkgo
-              cd e2e-tests
               go mod download
               go install -mod=mod github.com/onsi/ginkgo/v2/ginkgo
               export PATH="${GOPATH}/bin:${PATH}"

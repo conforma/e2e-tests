@@ -1,4 +1,4 @@
-module github.com/conforma/e2e-tests/e2e-tests
+module github.com/conforma/e2e-tests
 
 go 1.26.0
 

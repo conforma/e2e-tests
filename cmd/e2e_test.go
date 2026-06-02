@@ -13,7 +13,7 @@ import (
 	"github.com/onsi/gomega"
 
 	// Import test packages
-	_ "github.com/conforma/e2e-tests/e2e-tests/tests/contract"
+	_ "github.com/conforma/e2e-tests/tests/contract"
 
 	ecpApi "github.com/conforma/crds/api/v1alpha1"
 	appstudioApi "github.com/konflux-ci/application-api/api/v1alpha1"

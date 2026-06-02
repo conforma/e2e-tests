@@ -6,11 +6,11 @@ import (
 
 	ecp "github.com/conforma/crds/api/v1alpha1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
-	"github.com/conforma/e2e-tests/e2e-tests/pkg/clients/common"
-	"github.com/conforma/e2e-tests/e2e-tests/pkg/constants"
-	"github.com/conforma/e2e-tests/e2e-tests/pkg/framework"
-	"github.com/conforma/e2e-tests/e2e-tests/pkg/utils/contract"
-	"github.com/conforma/e2e-tests/e2e-tests/pkg/utils/tekton"
+	"github.com/conforma/e2e-tests/pkg/clients/common"
+	"github.com/conforma/e2e-tests/pkg/constants"
+	"github.com/conforma/e2e-tests/pkg/framework"
+	"github.com/conforma/e2e-tests/pkg/utils/contract"
+	"github.com/conforma/e2e-tests/pkg/utils/tekton"
 	"github.com/devfile/library/v2/pkg/util"
 	ginkgo "github.com/onsi/ginkgo/v2"
 	gomega "github.com/onsi/gomega"
@@ -104,6 +104,11 @@ var _ = framework.ConformaSuiteDescribe("Conforma E2E tests", ginkgo.Label("ec")
 
 			pr, err = fwk.AsKubeAdmin.TektonController.GetPipelineRun(pr.Name, pr.Namespace)
 			gomega.Expect(err).NotTo(gomega.HaveOccurred())
+
+			ginkgo.GinkgoWriter.Printf("PipelineRun %s/%s childReferences:\n", pr.Namespace, pr.Name)
+			for _, chr := range pr.Status.ChildReferences {
+				ginkgo.GinkgoWriter.Printf("  task=%s name=%s\n", chr.PipelineTaskName, chr.Name)
+			}
 
 			digest, err := fwk.AsKubeAdmin.TektonController.GetTaskRunResult(fwk.AsKubeAdmin.CommonController.KubeRest(), pr, "build-container", "IMAGE_DIGEST")
 			gomega.Expect(err).NotTo(gomega.HaveOccurred())
