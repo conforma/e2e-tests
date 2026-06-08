@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/conforma/e2e-tests/e2e-tests/pkg/constants"
+	"github.com/conforma/e2e-tests/pkg/constants"
 	app "github.com/konflux-ci/application-api/api/v1alpha1"
 	pipeline "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	corev1 "k8s.io/api/core/v1"
