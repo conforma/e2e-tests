@@ -5,7 +5,6 @@ import (
 	"time"
 
 	ecp "github.com/conforma/crds/api/v1alpha1"
-	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"github.com/conforma/e2e-tests/pkg/clients/common"
 	"github.com/conforma/e2e-tests/pkg/constants"
 	"github.com/conforma/e2e-tests/pkg/framework"
@@ -15,6 +14,7 @@ import (
 	ginkgo "github.com/onsi/ginkgo/v2"
 	gomega "github.com/onsi/gomega"
 	pipeline "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"sigs.k8s.io/yaml"
 )
 
@@ -75,9 +75,32 @@ var _ = framework.ConformaSuiteDescribe("Conforma E2E tests", ginkgo.Label("ec")
 
 			pipelineRunTimeout = int(time.Duration(20) * time.Minute)
 
+			// Red Hat Konflux and upstream/operator Konflux have different defaults
+			// for policy and data sources. Replace default operator Konflux ECP with
+			// Red Hat Konflux since e2e testing focusing on Red Hat Konflux stability.
+			defaultECP = &ecp.EnterpriseContractPolicy{}
+			defaultECP.Spec = ecp.EnterpriseContractPolicySpec{
+				Name:        "Red Hat",
+				Description: "Includes the full set of rules and policies required internally by Red Hat when building Red Hat products.",
+				Sources: []ecp.Source{
+					{
+						Name: "Default",
+						Policy: []string{
+							"oci::quay.io/enterprise-contract/ec-release-policy:konflux",
+						},
+						Data: []string{
+							"git::github.com/release-engineering/rhtap-ec-policy//data?ref=main",
+							"oci::quay.io/konflux-ci/tekton-catalog/data-acceptable-bundles:latest",
+							"oci::quay.io/konflux-ci/konflux-vanguard/data-acceptable-bundles:latest",
+							"oci::quay.io/konflux-ci/integration-service-catalog/data-acceptable-bundles:latest",
+						},
+						Config: &ecp.SourceConfig{
+							Include: []string{"@redhat"},
+						},
+					},
+				},
+			}
 			var err error
-			defaultECP, err = fwk.AsKubeAdmin.TektonController.GetEnterpriseContractPolicy("default", "enterprise-contract-service")
-			gomega.Expect(err).NotTo(gomega.HaveOccurred())
 
 			bundles, err := fwk.AsKubeAdmin.TektonController.NewBundles()
 			gomega.Expect(err).ShouldNot(gomega.HaveOccurred())
