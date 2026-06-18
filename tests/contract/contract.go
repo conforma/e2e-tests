@@ -352,8 +352,16 @@ var _ = framework.ConformaSuiteDescribe("Conforma E2E tests", ginkgo.Label("ec")
 						"-----END PUBLIC KEY-----")
 					gomega.Expect(fwk.AsKubeAdmin.TektonController.CreateOrUpdateSigningSecret(goldenImagePublicKey, secretName, namespace)).To(gomega.Succeed())
 					generator.PublicKey = fmt.Sprintf("k8s://%s/%s", namespace, secretName)
-					// Append extra excludes to the default ECP rather than replacing
-					// the entire config, which would drop its existing excludes.
+
+					// slsa_source_correlated.source_code_reference_provided is excluded
+					// because the test generator only passes a container image without
+					// a source code reference (git repo + revision), so the rule would
+					// always fail.
+
+					// cve.cve_results_found is excluded because the Clair scan report
+					// artifacts for the golden image can be garbage-collected from
+					// quay.io, making the CVE data unfetchable even though the
+					// attestation references it.
 					releasePolicy := *defaultECP.Spec.DeepCopy()
 					for i := range releasePolicy.Sources {
 						releasePolicy.Sources[i].Config.Exclude = append(
@@ -361,7 +369,6 @@ var _ = framework.ConformaSuiteDescribe("Conforma E2E tests", ginkgo.Label("ec")
 							"slsa_source_correlated.source_code_reference_provided",
 							"cve.cve_results_found",
 						)
-						releasePolicy.Sources[i].RuleData = &apiextensionsv1.JSON{Raw: []byte(`{"restrict_cve_security_levels": ["critical"]}`)}
 					}
 					gomega.Expect(fwk.AsKubeAdmin.TektonController.CreateOrUpdatePolicyConfiguration(namespace, releasePolicy)).To(gomega.Succeed())
 
@@ -379,6 +386,10 @@ var _ = framework.ConformaSuiteDescribe("Conforma E2E tests", ginkgo.Label("ec")
 					gomega.Expect(tr.Status.Results).ShouldNot(gomega.Or(
 						gomega.ContainElements(tekton.MatchTaskRunResultWithJSONPathValue(constants.TektonTaskTestOutputName, "{$.result}", `["FAILURE"]`)),
 					))
+
+					reportLog, err := framework.GetContainerLogs(fwk.AsKubeAdmin.CommonController.KubeInterface(), tr.Status.PodName, "step-report-json", namespace)
+					ginkgo.GinkgoWriter.Printf("*** Logs from pod '%s', container '%s':\n----- START -----%s----- END -----\n", tr.Status.PodName, "step-report-json", reportLog)
+					gomega.Expect(err).NotTo(gomega.HaveOccurred())
 				})
 
 				ginkgo.It("verifies the release policy: Task are trusted", func() {
