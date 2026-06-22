@@ -52,6 +52,17 @@ spec:
         Pinned commit of tekton-integration-catalog for kind-aws and other catalog tasks.
       # renovate: datasource=git-refs depName=https://github.com/konflux-ci/tekton-integration-catalog
       default: 77224106ecea32f1b0a01c68a8c8c97a70821800
+    - name: custom-ec-cli-url
+      type: string
+      description: >-
+        Git URL for a custom conforma/cli repo. When set with
+        custom-ec-cli-revision, the pipeline builds the CLI from source
+        and tests against it instead of the released image.
+      default: ""
+    - name: custom-ec-cli-revision
+      type: string
+      description: Git commit SHA or branch in the custom CLI repo.
+      default: ""
 
   tasks:
     # ──────────────────────────────────────────────────────────────────────────
@@ -137,6 +148,10 @@ spec:
           value: "$(params.oci-container-repo):$(context.pipelineRun.name)"
         - name: cluster-access-secret-name
           value: kfg-$(context.pipelineRun.name)
+        - name: custom-ec-cli-url
+          value: "$(params.custom-ec-cli-url)"
+        - name: custom-ec-cli-revision
+          value: "$(params.custom-ec-cli-revision)"
       taskSpec:
         params:
           - name: git-url
@@ -146,6 +161,10 @@ spec:
           - name: oras-container
             type: string
           - name: cluster-access-secret-name
+            type: string
+          - name: custom-ec-cli-url
+            type: string
+          - name: custom-ec-cli-revision
             type: string
         volumes:
           - name: konflux-ci-secrets-volume
@@ -188,6 +207,10 @@ spec:
                 value: "60m"
               - name: TEST_ENVIRONMENT
                 value: "upstream"
+              - name: CUSTOM_EC_CLI_URL
+                value: $(params.custom-ec-cli-url)
+              - name: CUSTOM_EC_CLI_REVISION
+                value: $(params.custom-ec-cli-revision)
             onError: continue
             script: |
               #!/bin/bash
@@ -204,6 +227,45 @@ spec:
               export GOPATH="${WORK_DIR}/go"
               export GOCACHE="${WORK_DIR}/cache"
               mkdir -p "${ARTIFACT_DIR}" "${GOPATH}" "${GOCACHE}"
+
+              # ── Build custom EC CLI image if requested ──────────────────
+              if [ -n "${CUSTOM_EC_CLI_URL}" ] && [ -n "${CUSTOM_EC_CLI_REVISION}" ]; then
+                echo "Building custom EC CLI from ${CUSTOM_EC_CLI_URL} @ ${CUSTOM_EC_CLI_REVISION}"
+
+                CLI_DIR="${WORK_DIR}/ec-cli"
+                git clone "${CUSTOM_EC_CLI_URL}" "${CLI_DIR}"
+                cd "${CLI_DIR}"
+                git checkout "${CUSTOM_EC_CLI_REVISION}"
+
+                # Build the ec binary (static, same as release)
+                CGO_ENABLED=0 go build -trimpath -o ec ./
+
+                # Install crane for image manipulation
+                go install github.com/google/go-containerregistry/cmd/crane@latest
+
+                # Configure registry auth from mounted infra secret
+                CRANE_AUTH_DIR="$(mktemp -d)"
+                cp /usr/local/konflux-test-infra/oci-storage-dockerconfigjson "${CRANE_AUTH_DIR}/config.json"
+                export DOCKER_CONFIG="${CRANE_AUTH_DIR}"
+
+                # Layer the custom ec binary onto the base image and push
+                CLI_SHA="${CUSTOM_EC_CLI_REVISION:0:12}"
+                CUSTOM_IMAGE="quay.io/conforma/e2e-tests:cli-pr-${CLI_SHA}"
+
+                tar cf ec-layer.tar --transform='s|^ec$|usr/local/bin/ec|' ec
+                "${GOPATH}/bin/crane" append \
+                  --base "quay.io/conforma/cli:latest" \
+                  --new_layer ec-layer.tar \
+                  --new_tag "${CUSTOM_IMAGE}"
+
+                echo "Pushed custom CLI image: ${CUSTOM_IMAGE}"
+
+                # Set env vars consumed by tests/contract/contract.go
+                export CUSTOM_EC_CLI_IMAGE="${CUSTOM_IMAGE}"
+                export CUSTOM_EC_TASK_YAML="${CLI_DIR}/tasks/verify-enterprise-contract/0.1/verify-enterprise-contract.yaml"
+
+                cd "${WORK_DIR}"
+              fi
 
               # Clone and checkout the conforma/e2e-tests repo
               git clone "${GIT_URL}" "${WORK_DIR}/e2e-tests"
