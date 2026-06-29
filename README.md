@@ -105,6 +105,26 @@ The test suite uses the [Ginkgo](https://onsi.github.io/ginkgo/) framework and i
    - Collect artifacts and push to OCI
    - Deprovision the cluster
 
+#### Testing a custom CLI build
+
+To test a conforma/cli PR against the e2e suite, pass the custom CLI params:
+
+```bash
+tkn pipeline start conforma-e2e-pipeline \
+  --param git-url=https://github.com/conforma/e2e-tests.git \
+  --param revision=main \
+  --param oci-container-repo=quay.io/conforma/e2e-tests \
+  --param oci-container-repo-credentials-secret=konflux-test-infra \
+  --param custom-ec-cli-url=https://github.com/conforma/cli.git \
+  --param custom-ec-cli-revision=<commit-sha-or-branch> \
+  --use-param-defaults \
+  --showlog
+```
+
+The pipeline clones the CLI repo, builds the `ec` binary, layers it onto `quay.io/conforma/cli:latest` using `crane append`, and pushes a throwaway image tagged `cli-pr-<short-sha>`. All `verify-enterprise-contract` test cases then run against the custom image instead of the released one.
+
+When both params are empty (the default), the pipeline uses the standard task bundle and released CLI image.
+
 #### Option B: Run directly against an existing Konflux cluster
 
 If you already have a Konflux cluster running:
@@ -134,6 +154,8 @@ make test-e2e
 | `TEST_ENVIRONMENT` | No | Set to `upstream` for upstream Konflux deployments |
 | `QUAY_E2E_ORGANIZATION_ENV` | No | Quay.io organization for test images (defaults to `redhat-appstudio-qe`) |
 | `E2E_APPLICATIONS_NAMESPACE` | No | Override the generated test namespace |
+| `CUSTOM_EC_CLI_IMAGE` | No | Custom CLI container image (set automatically by the pipeline when `custom-ec-cli-url` is provided) |
+| `CUSTOM_EC_TASK_YAML` | No | Path to task YAML to patch with the custom image (set automatically by the pipeline) |
 | `KLOG_VERBOSITY` | No | Kubernetes client logging verbosity (default: `1`) |
 
 ### Project structure
@@ -150,7 +172,7 @@ pkg/
   framework/                           # Test framework (namespace creation, RBAC, reporting)
   utils/
     contract/policy.go                 # ECP policy helpers
-    tekton/                            # Pipeline generators, matchers, cosign utilities
+    tekton/                            # Pipeline generators, matchers, cosign utilities, task image patching
 .tekton/
   pipelines/conforma-e2e/pipeline.yaml # Tekton Pipeline for full CI execution
   conforma-e2e-pull-request.yaml       # PipelineRun trigger for pull requests

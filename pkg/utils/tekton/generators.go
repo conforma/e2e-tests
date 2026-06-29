@@ -32,6 +32,7 @@ type BuildahDemo struct {
 type VerifyEnterpriseContract struct {
 	Snapshot            app.SnapshotSpec
 	TaskBundle          string
+	TaskSpec            *pipeline.EmbeddedTask
 	Name                string
 	Namespace           string
 	PolicyConfiguration string
@@ -87,6 +88,35 @@ func (p VerifyEnterpriseContract) Generate() (*pipeline.PipelineRun, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	task := pipeline.PipelineTask{
+		Name: "verify-enterprise-contract",
+		Params: []pipeline.Param{
+			{Name: "IMAGES", Value: pipeline.ParamValue{Type: pipeline.ParamTypeString, StringVal: string(applicationSnapshotJSON)}},
+			{Name: "POLICY_CONFIGURATION", Value: pipeline.ParamValue{Type: pipeline.ParamTypeString, StringVal: p.PolicyConfiguration}},
+			{Name: "PUBLIC_KEY", Value: pipeline.ParamValue{Type: pipeline.ParamTypeString, StringVal: p.PublicKey}},
+			{Name: "SSL_CERT_DIR", Value: pipeline.ParamValue{Type: pipeline.ParamTypeString, StringVal: sslCertDir}},
+			{Name: "STRICT", Value: pipeline.ParamValue{Type: pipeline.ParamTypeString, StringVal: strconv.FormatBool(p.Strict)}},
+			{Name: "EFFECTIVE_TIME", Value: pipeline.ParamValue{Type: pipeline.ParamTypeString, StringVal: p.EffectiveTime}},
+			{Name: "IGNORE_REKOR", Value: pipeline.ParamValue{Type: pipeline.ParamTypeString, StringVal: strconv.FormatBool(p.IgnoreRekor)}},
+		},
+	}
+
+	if p.TaskSpec != nil {
+		task.TaskSpec = p.TaskSpec
+	} else {
+		task.TaskRef = &pipeline.TaskRef{
+			ResolverRef: pipeline.ResolverRef{
+				Resolver: "bundles",
+				Params: []pipeline.Param{
+					{Name: "name", Value: pipeline.ParamValue{StringVal: "verify-enterprise-contract", Type: pipeline.ParamTypeString}},
+					{Name: "bundle", Value: pipeline.ParamValue{StringVal: p.TaskBundle, Type: pipeline.ParamTypeString}},
+					{Name: "kind", Value: pipeline.ParamValue{StringVal: "task", Type: pipeline.ParamTypeString}},
+				},
+			},
+		}
+	}
+
 	return &pipeline.PipelineRun{
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: fmt.Sprintf("%s-run-", p.Name),
@@ -97,30 +127,7 @@ func (p VerifyEnterpriseContract) Generate() (*pipeline.PipelineRun, error) {
 		},
 		Spec: pipeline.PipelineRunSpec{
 			PipelineSpec: &pipeline.PipelineSpec{
-				Tasks: []pipeline.PipelineTask{
-					{
-						Name: "verify-enterprise-contract",
-						Params: []pipeline.Param{
-							{Name: "IMAGES", Value: pipeline.ParamValue{Type: pipeline.ParamTypeString, StringVal: string(applicationSnapshotJSON)}},
-							{Name: "POLICY_CONFIGURATION", Value: pipeline.ParamValue{Type: pipeline.ParamTypeString, StringVal: p.PolicyConfiguration}},
-							{Name: "PUBLIC_KEY", Value: pipeline.ParamValue{Type: pipeline.ParamTypeString, StringVal: p.PublicKey}},
-							{Name: "SSL_CERT_DIR", Value: pipeline.ParamValue{Type: pipeline.ParamTypeString, StringVal: sslCertDir}},
-							{Name: "STRICT", Value: pipeline.ParamValue{Type: pipeline.ParamTypeString, StringVal: strconv.FormatBool(p.Strict)}},
-							{Name: "EFFECTIVE_TIME", Value: pipeline.ParamValue{Type: pipeline.ParamTypeString, StringVal: p.EffectiveTime}},
-							{Name: "IGNORE_REKOR", Value: pipeline.ParamValue{Type: pipeline.ParamTypeString, StringVal: strconv.FormatBool(p.IgnoreRekor)}},
-						},
-						TaskRef: &pipeline.TaskRef{
-							ResolverRef: pipeline.ResolverRef{
-								Resolver: "bundles",
-								Params: []pipeline.Param{
-									{Name: "name", Value: pipeline.ParamValue{StringVal: "verify-enterprise-contract", Type: pipeline.ParamTypeString}},
-									{Name: "bundle", Value: pipeline.ParamValue{StringVal: p.TaskBundle, Type: pipeline.ParamTypeString}},
-									{Name: "kind", Value: pipeline.ParamValue{StringVal: "task", Type: pipeline.ParamTypeString}},
-								},
-							},
-						},
-					},
-				},
+				Tasks: []pipeline.PipelineTask{task},
 			},
 			TaskRunTemplate: pipeline.PipelineTaskRunTemplate{
 				ServiceAccountName: constants.DefaultPipelineServiceAccount,
