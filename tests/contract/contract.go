@@ -2,6 +2,7 @@ package contract
 
 import (
 	"fmt"
+	"os"
 	"time"
 
 	ecp "github.com/conforma/crds/api/v1alpha1"
@@ -159,6 +160,7 @@ var _ = framework.ConformaSuiteDescribe("Conforma E2E tests", ginkgo.Label("ec")
 			var generator tekton.VerifyEnterpriseContract
 			var rekorHost string
 			var verifyECTaskBundle string
+			var customTaskSpec *pipeline.EmbeddedTask
 			publicSecretName := "cosign-public-key"
 
 			ginkgo.BeforeAll(func() {
@@ -172,16 +174,27 @@ var _ = framework.ConformaSuiteDescribe("Conforma E2E tests", ginkgo.Label("ec")
 				gomega.Expect(err).ToNot(gomega.HaveOccurred())
 				ginkgo.GinkgoWriter.Printf("Configured Rekor host: %s\n", rekorHost)
 
-				cm, err := fwk.AsKubeAdmin.CommonController.GetConfigMap("ec-defaults", "enterprise-contract-service")
-				gomega.Expect(err).ToNot(gomega.HaveOccurred())
-				verifyECTaskBundle = cm.Data["verify_ec_task_bundle"]
-				gomega.Expect(verifyECTaskBundle).ToNot(gomega.BeEmpty())
-				ginkgo.GinkgoWriter.Printf("Using verify EC task bundle: %s\n", verifyECTaskBundle)
+				customImage, taskYAML := os.Getenv("CUSTOM_EC_CLI_IMAGE"), os.Getenv("CUSTOM_EC_TASK_YAML")
+				if (customImage == "") != (taskYAML == "") {
+					ginkgo.Fail(fmt.Sprintf("both CUSTOM_EC_CLI_IMAGE and CUSTOM_EC_TASK_YAML must be set together (image=%q, yaml=%q)", customImage, taskYAML))
+				}
+				if customImage != "" {
+					ginkgo.GinkgoWriter.Printf("Using custom EC CLI image: %s\n", customImage)
+					customTaskSpec, err = tekton.LoadAndPatchTaskImage(taskYAML, customImage)
+					gomega.Expect(err).ToNot(gomega.HaveOccurred())
+				} else {
+					cm, err := fwk.AsKubeAdmin.CommonController.GetConfigMap("ec-defaults", "enterprise-contract-service")
+					gomega.Expect(err).ToNot(gomega.HaveOccurred())
+					verifyECTaskBundle = cm.Data["verify_ec_task_bundle"]
+					gomega.Expect(verifyECTaskBundle).ToNot(gomega.BeEmpty())
+					ginkgo.GinkgoWriter.Printf("Using verify EC task bundle: %s\n", verifyECTaskBundle)
+				}
 			})
 
 			ginkgo.BeforeEach(func() {
 				generator = tekton.VerifyEnterpriseContract{
 					TaskBundle:          verifyECTaskBundle,
+					TaskSpec:            customTaskSpec,
 					Name:                "verify-enterprise-contract",
 					Namespace:           namespace,
 					PolicyConfiguration: "ec-policy",
