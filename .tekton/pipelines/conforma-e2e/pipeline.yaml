@@ -42,7 +42,8 @@ spec:
       type: string
       description: >-
         Pinned commit of konflux-ci for deploy-konflux task.
-      default: main
+      # renovate: datasource=git-refs depName=https://github.com/konflux-ci/konflux-ci
+      default: 61df3949abf2e8120505bc1ec05e3b9699566660
     - name: catalog-url
       type: string
       default: https://github.com/konflux-ci/tekton-integration-catalog.git
@@ -177,19 +178,127 @@ spec:
             secret:
               optional: true
               secretName: $(params.cluster-access-secret-name)
+          - name: custom-cli-shared
+            emptyDir: {}
         steps:
-          - name: e2e-test
-            image: registry.access.redhat.com/ubi9/go-toolset:9.7-1768393489
+          - name: build-custom-cli
+            # renovate: datasource=docker depName=registry.access.redhat.com/ubi9/go-toolset
+            image: registry.access.redhat.com/ubi9/go-toolset:9.7-1768393489@sha256:e8938564f866174a6d79e55dfe577c2ed184b1f53e91d782173fb69b07ce69ef
             securityContext:
-              runAsUser: 0
+              runAsNonRoot: true
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop:
+                  - ALL
+              seccompProfile:
+                type: RuntimeDefault
+            computeResources:
+              requests:
+                cpu: "2"
+                memory: 4Gi
+              limits:
+                cpu: "4"
+                memory: 8Gi
+            volumeMounts:
+              - name: konflux-infra-secrets-volume
+                mountPath: /usr/local/konflux-test-infra
+                readOnly: true
+              - name: custom-cli-shared
+                mountPath: /shared
+            env:
+              - name: GOTOOLCHAIN
+                value: auto
+              - name: CUSTOM_EC_CLI_URL
+                value: $(params.custom-ec-cli-url)
+              - name: CUSTOM_EC_CLI_REVISION
+                value: $(params.custom-ec-cli-revision)
+            script: |
+              #!/bin/bash
+              set -euo pipefail
+
+              if [ -z "${CUSTOM_EC_CLI_URL}" ] && [ -z "${CUSTOM_EC_CLI_REVISION}" ]; then
+                echo "No custom CLI requested, skipping."
+                exit 0
+              fi
+
+              if [ -z "${CUSTOM_EC_CLI_URL}" ] || [ -z "${CUSTOM_EC_CLI_REVISION}" ]; then
+                echo "ERROR: custom-ec-cli-url and custom-ec-cli-revision must be set together."
+                exit 1
+              fi
+
+              echo "Building custom EC CLI from ${CUSTOM_EC_CLI_URL} @ ${CUSTOM_EC_CLI_REVISION}"
+
+              WORK_DIR="$(mktemp -d)"
+              export GOPATH="${WORK_DIR}/go"
+              export GOCACHE="${WORK_DIR}/cache"
+              mkdir -p "${GOPATH}" "${GOCACHE}"
+
+              CLI_DIR="${WORK_DIR}/ec-cli"
+              git clone "${CUSTOM_EC_CLI_URL}" "${CLI_DIR}"
+              cd "${CLI_DIR}"
+              git checkout "${CUSTOM_EC_CLI_REVISION}"
+
+              CGO_ENABLED=0 go build -trimpath -o ec ./
+
+              # renovate: datasource=go depName=github.com/google/go-containerregistry
+              go install github.com/google/go-containerregistry/cmd/crane@v0.21.9
+
+              CRANE_AUTH_DIR="$(mktemp -d)"
+              cp /usr/local/konflux-test-infra/oci-storage-dockerconfigjson "${CRANE_AUTH_DIR}/config.json"
+              export DOCKER_CONFIG="${CRANE_AUTH_DIR}"
+
+              CLI_SHA="$(git rev-parse --short=12 HEAD)"
+              CUSTOM_IMAGE="quay.io/conforma/e2e-tests:cli-pr-${CLI_SHA}"
+
+              # renovate: datasource=docker depName=quay.io/conforma/cli
+              CLI_BASE_IMAGE="quay.io/conforma/cli:latest@sha256:56f13aff4e812b9c6de92da8a15255a67cb2851bb2d08aa917248a904e49ead4"
+
+              tar cf ec-layer.tar --transform='s|^ec$|usr/local/bin/ec|' ec
+              "${GOPATH}/bin/crane" append \
+                --base "${CLI_BASE_IMAGE}" \
+                --new_layer ec-layer.tar \
+                --new_tag "${CUSTOM_IMAGE}"
+
+              echo "Pushed custom CLI image: ${CUSTOM_IMAGE}"
+
+              # Pass outputs to the e2e-test step via shared volume
+              echo "${CUSTOM_IMAGE}" > /shared/custom-cli-image
+              cp -r "${CLI_DIR}/tasks" /shared/tasks
+
+              EXPECTED_TASK="/shared/tasks/verify-enterprise-contract/0.1/verify-enterprise-contract.yaml"
+              if [ ! -f "${EXPECTED_TASK}" ]; then
+                echo "ERROR: Expected task YAML not found at ${EXPECTED_TASK}"
+                exit 1
+              fi
+
+          - name: e2e-test
+            # renovate: datasource=docker depName=registry.access.redhat.com/ubi9/go-toolset
+            image: registry.access.redhat.com/ubi9/go-toolset:9.7-1768393489@sha256:e8938564f866174a6d79e55dfe577c2ed184b1f53e91d782173fb69b07ce69ef
+            securityContext:
+              runAsNonRoot: true
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop:
+                  - ALL
+              seccompProfile:
+                type: RuntimeDefault
+            computeResources:
+              requests:
+                cpu: "2"
+                memory: 4Gi
+              limits:
+                cpu: "4"
+                memory: 8Gi
             volumeMounts:
               - name: konflux-ci-secrets-volume
                 mountPath: /usr/local/konflux-ci-secrets
-              - name: konflux-infra-secrets-volume
-                mountPath: /usr/local/konflux-test-infra
+                readOnly: true
               - name: cluster-secret-volume
                 mountPath: /tmp/kubeconfig
                 subPath: kubeconfig
+              - name: custom-cli-shared
+                mountPath: /shared
+                readOnly: true
             env:
               - name: KUBECONFIG
                 value: /tmp/kubeconfig
@@ -207,77 +316,36 @@ spec:
                 value: "60m"
               - name: TEST_ENVIRONMENT
                 value: "upstream"
-              - name: CUSTOM_EC_CLI_URL
-                value: $(params.custom-ec-cli-url)
-              - name: CUSTOM_EC_CLI_REVISION
-                value: $(params.custom-ec-cli-revision)
             onError: continue
             script: |
               #!/bin/bash
               set -euo pipefail
 
-              # Load and decode secrets
               SECRETS="/usr/local/konflux-ci-secrets"
               if [ -f "${SECRETS}/quay-token" ]; then
                 export QUAY_TOKEN="$(cat "${SECRETS}/quay-token")"
               fi
 
-              # Set up a clean working directory
+              # Pick up custom CLI outputs from the build-custom-cli step
+              if [ -f /shared/custom-cli-image ]; then
+                export CUSTOM_EC_CLI_IMAGE="$(cat /shared/custom-cli-image)"
+                export CUSTOM_EC_TASK_YAML="/shared/tasks/verify-enterprise-contract/0.1/verify-enterprise-contract.yaml"
+                echo "Using custom CLI image: ${CUSTOM_EC_CLI_IMAGE}"
+              fi
+
               WORK_DIR="$(mktemp -d)"
               export GOPATH="${WORK_DIR}/go"
               export GOCACHE="${WORK_DIR}/cache"
               mkdir -p "${ARTIFACT_DIR}" "${GOPATH}" "${GOCACHE}"
 
-              # ── Build custom EC CLI image if requested ──────────────────
-              if [ -n "${CUSTOM_EC_CLI_URL}" ] && [ -n "${CUSTOM_EC_CLI_REVISION}" ]; then
-                echo "Building custom EC CLI from ${CUSTOM_EC_CLI_URL} @ ${CUSTOM_EC_CLI_REVISION}"
-
-                CLI_DIR="${WORK_DIR}/ec-cli"
-                git clone "${CUSTOM_EC_CLI_URL}" "${CLI_DIR}"
-                cd "${CLI_DIR}"
-                git checkout "${CUSTOM_EC_CLI_REVISION}"
-
-                # Build the ec binary (static, same as release)
-                CGO_ENABLED=0 go build -trimpath -o ec ./
-
-                # Install crane for image manipulation
-                go install github.com/google/go-containerregistry/cmd/crane@latest
-
-                # Configure registry auth from mounted infra secret
-                CRANE_AUTH_DIR="$(mktemp -d)"
-                cp /usr/local/konflux-test-infra/oci-storage-dockerconfigjson "${CRANE_AUTH_DIR}/config.json"
-                export DOCKER_CONFIG="${CRANE_AUTH_DIR}"
-
-                # Layer the custom ec binary onto the base image and push
-                CLI_SHA="$(git rev-parse --short=12 HEAD)"
-                CUSTOM_IMAGE="quay.io/conforma/e2e-tests:cli-pr-${CLI_SHA}"
-
-                tar cf ec-layer.tar --transform='s|^ec$|usr/local/bin/ec|' ec
-                "${GOPATH}/bin/crane" append \
-                  --base "quay.io/conforma/cli:latest" \
-                  --new_layer ec-layer.tar \
-                  --new_tag "${CUSTOM_IMAGE}"
-
-                echo "Pushed custom CLI image: ${CUSTOM_IMAGE}"
-
-                # Set env vars consumed by tests/contract/contract.go
-                export CUSTOM_EC_CLI_IMAGE="${CUSTOM_IMAGE}"
-                export CUSTOM_EC_TASK_YAML="${CLI_DIR}/tasks/verify-enterprise-contract/0.1/verify-enterprise-contract.yaml"
-
-                cd "${WORK_DIR}"
-              fi
-
-              # Clone and checkout the conforma/e2e-tests repo
               git clone "${GIT_URL}" "${WORK_DIR}/e2e-tests"
               cd "${WORK_DIR}/e2e-tests"
               git checkout "${GIT_REVISION}"
 
-              # Prepare Go toolchain and Ginkgo
               go mod download
               go install -mod=mod github.com/onsi/ginkgo/v2/ginkgo
               export PATH="${GOPATH}/bin:${PATH}"
 
-              # Run the conforma e2e test suite
               ginkgo -v \
                 --no-color \
                 --output-interceptor-mode=none \
@@ -294,7 +362,8 @@ spec:
                 - name: url
                   value: https://github.com/konflux-ci/tekton-integration-catalog.git
                 - name: revision
-                  value: main
+                  # renovate: datasource=git-refs depName=https://github.com/konflux-ci/tekton-integration-catalog
+                  value: 77224106ecea32f1b0a01c68a8c8c97a70821800
                 - name: pathInRepo
                   value: stepactions/secure-push-oci/0.1/secure-push-oci.yaml
             params:
@@ -311,7 +380,8 @@ spec:
                 - name: url
                   value: https://github.com/konflux-ci/tekton-integration-catalog.git
                 - name: revision
-                  value: main
+                  # renovate: datasource=git-refs depName=https://github.com/konflux-ci/tekton-integration-catalog
+                  value: 77224106ecea32f1b0a01c68a8c8c97a70821800
                 - name: pathInRepo
                   value: stepactions/fail-if-any-step-failed/0.1/fail-if-any-step-failed.yaml
     # ──────────────────────────────────────────────────────────────────────────
