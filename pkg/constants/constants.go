@@ -26,6 +26,14 @@ const (
 	TEST_ENVIRONMENT_ENV    = "TEST_ENVIRONMENT"
 	UpstreamTestEnvironment = "upstream"
 
+	ITSPipelineRepoURLDefault  = "https://github.com/conforma/cli"
+	ITSPipelineRevisionDefault = "main"
+	ITSPipelinePathDefault     = "pipelines/enterprise-contract/0.1/enterprise-contract.yaml"
+
+	ITS_PIPELINE_REPO_URL_ENV  = "ITS_PIPELINE_REPO_URL"
+	ITS_PIPELINE_REVISION_ENV  = "ITS_PIPELINE_REVISION"
+	ITS_PIPELINE_PATH_ENV      = "ITS_PIPELINE_PATH"
+
 	KonfluxAdminUserActionsClusterRoleName = "konflux-admin-user-actions"
 	DefaultKonfluxAdminRoleBindingName     = "user2-konflux-admin"
 	DefaultKonfluxCIUserName               = "user2@konflux.dev"
