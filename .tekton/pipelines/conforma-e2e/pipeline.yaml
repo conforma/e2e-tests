@@ -64,6 +64,22 @@ spec:
       type: string
       description: Git commit SHA or branch in the custom CLI repo.
       default: ""
+    - name: its-pipeline-repo-url
+      type: string
+      description: Repository containing the ITS pipeline definition to test.
+      default: "https://github.com/conforma/cli"
+    - name: its-pipeline-revision
+      type: string
+      description: Exact pipeline source commit to test in PR CI; independent of the E2E test revision.
+      default: "main"
+    - name: its-pipeline-path
+      type: string
+      description: Path to the ITS pipeline definition in its source repository.
+      default: "pipelines/enterprise-contract/0.1/enterprise-contract.yaml"
+    - name: test-label-filter
+      type: string
+      description: Ginkgo labels to run; use its-pipeline for ITS pipeline PRs.
+      default: "ec || its-pipeline"
 
   tasks:
     # ──────────────────────────────────────────────────────────────────────────
@@ -153,6 +169,14 @@ spec:
           value: "$(params.custom-ec-cli-url)"
         - name: custom-ec-cli-revision
           value: "$(params.custom-ec-cli-revision)"
+        - name: its-pipeline-repo-url
+          value: "$(params.its-pipeline-repo-url)"
+        - name: its-pipeline-revision
+          value: "$(params.its-pipeline-revision)"
+        - name: its-pipeline-path
+          value: "$(params.its-pipeline-path)"
+        - name: test-label-filter
+          value: "$(params.test-label-filter)"
       taskSpec:
         params:
           - name: git-url
@@ -166,6 +190,14 @@ spec:
           - name: custom-ec-cli-url
             type: string
           - name: custom-ec-cli-revision
+            type: string
+          - name: its-pipeline-repo-url
+            type: string
+          - name: its-pipeline-revision
+            type: string
+          - name: its-pipeline-path
+            type: string
+          - name: test-label-filter
             type: string
         volumes:
           - name: konflux-ci-secrets-volume
@@ -316,6 +348,14 @@ spec:
                 value: "60m"
               - name: TEST_ENVIRONMENT
                 value: "upstream"
+              - name: ITS_PIPELINE_REPO_URL
+                value: $(params.its-pipeline-repo-url)
+              - name: ITS_PIPELINE_REVISION
+                value: $(params.its-pipeline-revision)
+              - name: ITS_PIPELINE_PATH
+                value: $(params.its-pipeline-path)
+              - name: TEST_LABEL_FILTER
+                value: $(params.test-label-filter)
             onError: continue
             script: |
               #!/bin/bash
@@ -353,7 +393,7 @@ spec:
                 --timeout="${E2E_TIMEOUT}" \
                 --output-dir="${ARTIFACT_DIR}" \
                 --junit-report=e2e-report.xml \
-                --label-filter="ec" \
+                --label-filter="${TEST_LABEL_FILTER}" \
                 ./cmd
           - name: secure-push-oci
             ref:

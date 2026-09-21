@@ -1,9 +1,9 @@
 package its_pipeline
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
-	"time"
 
 	ecp "github.com/conforma/crds/api/v1alpha1"
 	"github.com/conforma/e2e-tests/pkg/constants"
@@ -13,6 +13,8 @@ import (
 	"github.com/devfile/library/v2/pkg/util"
 	ginkgo "github.com/onsi/ginkgo/v2"
 	gomega "github.com/onsi/gomega"
+	pipeline "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
+	"knative.dev/pkg/apis"
 )
 
 var _ = framework.ConformaSuiteDescribe("ITS Pipeline E2E tests", ginkgo.Label("its-pipeline"), func() {
@@ -35,7 +37,7 @@ var _ = framework.ConformaSuiteDescribe("ITS Pipeline E2E tests", ginkgo.Label("
 		gomega.Expect(fwk.UserNamespace).NotTo(gomega.BeEmpty(), "failed to create sandbox user")
 		namespace = fwk.UserNamespace
 
-		pipelineRunTimeout = int(time.Duration(20) * time.Minute)
+		pipelineRunTimeout = 20 * 60 // Pipeline helpers accept seconds.
 
 		// ITS pipeline location, configurable via env vars for testing PR branches
 		itsRepoURL = os.Getenv(constants.ITS_PIPELINE_REPO_URL_ENV)
@@ -151,6 +153,8 @@ var _ = framework.ConformaSuiteDescribe("ITS Pipeline E2E tests", ginkgo.Label("
 
 			pr, err = fwk.AsKubeAdmin.TektonController.GetPipelineRun(pr.Name, pr.Namespace)
 			gomega.Expect(err).NotTo(gomega.HaveOccurred())
+			gomega.Expect(pr.Status.GetCondition(apis.ConditionSucceeded).IsTrue()).To(gomega.BeTrue(), "unexpected PipelineRun status: %v", pr.Status.Conditions)
+			expectPipelineOutput(pr, "SUCCESS")
 
 			tr, err := fwk.AsKubeAdmin.TektonController.GetTaskRunStatus(fwk.AsKubeAdmin.CommonController.KubeRest(), pr, "verify")
 			gomega.Expect(err).NotTo(gomega.HaveOccurred())
@@ -172,10 +176,14 @@ var _ = framework.ConformaSuiteDescribe("ITS Pipeline E2E tests", ginkgo.Label("
 
 			pr, err = fwk.AsKubeAdmin.TektonController.GetPipelineRun(pr.Name, pr.Namespace)
 			gomega.Expect(err).NotTo(gomega.HaveOccurred())
+			gomega.Expect(pr.Status.GetCondition(apis.ConditionSucceeded).IsFalse()).To(gomega.BeTrue(), "unexpected PipelineRun status: %v", pr.Status.Conditions)
 
 			tr, err := fwk.AsKubeAdmin.TektonController.GetTaskRunStatus(fwk.AsKubeAdmin.CommonController.KubeRest(), pr, "verify")
 			gomega.Expect(err).NotTo(gomega.HaveOccurred())
 			gomega.Expect(tekton.DidTaskRunSucceed(tr)).To(gomega.BeFalse())
+			gomega.Expect(tr.Status.Results).Should(
+				gomega.ContainElements(tekton.MatchTaskRunResultWithJSONPathValue(constants.TektonTaskTestOutputName, "{$.result}", `["FAILURE"]`)),
+			)
 		})
 
 		ginkgo.It("reports failure but does not fail in non-strict mode", func() {
@@ -190,6 +198,8 @@ var _ = framework.ConformaSuiteDescribe("ITS Pipeline E2E tests", ginkgo.Label("
 
 			pr, err = fwk.AsKubeAdmin.TektonController.GetPipelineRun(pr.Name, pr.Namespace)
 			gomega.Expect(err).NotTo(gomega.HaveOccurred())
+			gomega.Expect(pr.Status.GetCondition(apis.ConditionSucceeded).IsTrue()).To(gomega.BeTrue(), "unexpected PipelineRun status: %v", pr.Status.Conditions)
+			expectPipelineOutput(pr, "FAILURE")
 
 			tr, err := fwk.AsKubeAdmin.TektonController.GetTaskRunStatus(fwk.AsKubeAdmin.CommonController.KubeRest(), pr, "verify")
 			gomega.Expect(err).NotTo(gomega.HaveOccurred())
@@ -200,3 +210,20 @@ var _ = framework.ConformaSuiteDescribe("ITS Pipeline E2E tests", ginkgo.Label("
 		})
 	})
 })
+
+// Check the public pipeline result consumed by the integration service.
+func expectPipelineOutput(pr *pipeline.PipelineRun, expected string) {
+	ginkgo.GinkgoHelper()
+	for _, result := range pr.Status.Results {
+		if result.Name != constants.TektonTaskTestOutputName {
+			continue
+		}
+		var output struct {
+			Result string `json:"result"`
+		}
+		gomega.Expect(json.Unmarshal([]byte(result.Value.StringVal), &output)).To(gomega.Succeed())
+		gomega.Expect(output.Result).To(gomega.Equal(expected))
+		return
+	}
+	ginkgo.Fail("PipelineRun did not export " + constants.TektonTaskTestOutputName)
+}
