@@ -135,7 +135,7 @@ The E2E test source and the ITS pipeline source are selected independently:
 | `its-pipeline-repo-url` | Repository containing the ITS definition (use the PR source repository for forks) | `https://github.com/conforma/cli` |
 | `its-pipeline-revision` | Pipeline source revision (use the exact PR head SHA in CI) | `main` |
 | `its-pipeline-path` | Pipeline YAML within that repository | `pipelines/enterprise-contract/0.1/enterprise-contract.yaml` |
-| `test-label-filter` | Ginkgo suites to execute | `ec || its-pipeline` |
+| `test-label-filter` | Ginkgo suites to execute | `ec \|\| its-pipeline` |
 
 For example, after applying the E2E pipeline definition:
 
