@@ -14,6 +14,7 @@ import (
 
 	// Import test packages
 	_ "github.com/conforma/e2e-tests/tests/contract"
+	_ "github.com/conforma/e2e-tests/tests/its_pipeline"
 
 	ecpApi "github.com/conforma/crds/api/v1alpha1"
 	appstudioApi "github.com/konflux-ci/application-api/api/v1alpha1"
