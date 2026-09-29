@@ -10,10 +10,10 @@ require (
 	github.com/onsi/gomega v1.40.0
 	github.com/tektoncd/pipeline v1.16.0
 	gopkg.in/yaml.v2 v2.4.0
-	k8s.io/api v0.36.4
-	k8s.io/apiextensions-apiserver v0.36.4
-	k8s.io/apimachinery v0.36.4
-	k8s.io/client-go v0.36.4
+	k8s.io/api v0.36.5
+	k8s.io/apiextensions-apiserver v0.36.5
+	k8s.io/apimachinery v0.36.5
+	k8s.io/client-go v0.36.5
 	k8s.io/klog/v2 v2.140.0
 	knative.dev/pkg v0.0.0-20260622140654-39ebae2ee2dc
 	sigs.k8s.io/controller-runtime v0.24.1
