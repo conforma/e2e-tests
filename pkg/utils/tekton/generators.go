@@ -136,6 +136,19 @@ func (p VerifyEnterpriseContract) Generate() (*pipeline.PipelineRun, error) {
 	}, nil
 }
 
+func NewGitResolverPipelineRef(url, revision, pathInRepo string) *pipeline.PipelineRef {
+	return &pipeline.PipelineRef{
+		ResolverRef: pipeline.ResolverRef{
+			Resolver: "git",
+			Params: []pipeline.Param{
+				{Name: "url", Value: pipeline.ParamValue{StringVal: url, Type: pipeline.ParamTypeString}},
+				{Name: "revision", Value: pipeline.ParamValue{StringVal: revision, Type: pipeline.ParamTypeString}},
+				{Name: "pathInRepo", Value: pipeline.ParamValue{StringVal: pathInRepo, Type: pipeline.ParamTypeString}},
+			},
+		},
+	}
+}
+
 func NewBundleResolverPipelineRef(name, bundleRef string) *pipeline.PipelineRef {
 	return &pipeline.PipelineRef{
 		ResolverRef: pipeline.ResolverRef{
@@ -157,6 +170,59 @@ type BuildPipelineConfig struct {
 type PipelineRef struct {
 	Name   string `json:"name"`
 	Bundle string `json:"bundle"`
+}
+
+type ITSPipeline struct {
+	Snapshot            app.SnapshotSpec
+	Name                string
+	Namespace           string
+	PolicyConfiguration string
+	PublicKey           string
+	Strict              bool
+	EffectiveTime       string
+	RepoURL             string
+	Revision            string
+	PathInRepo          string
+}
+
+func (p *ITSPipeline) WithComponentImage(imageRef string) {
+	p.Snapshot.Components = []app.SnapshotComponent{
+		{ContainerImage: imageRef},
+	}
+}
+
+func (p *ITSPipeline) AppendComponentImage(imageRef string) {
+	p.Snapshot.Components = append(p.Snapshot.Components, app.SnapshotComponent{
+		ContainerImage: imageRef,
+	})
+}
+
+func (p ITSPipeline) Generate() (*pipeline.PipelineRun, error) {
+	snapshotJSON, err := json.Marshal(p.Snapshot)
+	if err != nil {
+		return nil, err
+	}
+
+	return &pipeline.PipelineRun{
+		ObjectMeta: metav1.ObjectMeta{
+			GenerateName: fmt.Sprintf("%s-run-", p.Name),
+			Namespace:    p.Namespace,
+		},
+		Spec: pipeline.PipelineRunSpec{
+			PipelineRef: NewGitResolverPipelineRef(p.RepoURL, p.Revision, p.PathInRepo),
+			Params: []pipeline.Param{
+				{Name: "SNAPSHOT", Value: *pipeline.NewStructuredValues(string(snapshotJSON))},
+				{Name: "POLICY_CONFIGURATION", Value: *pipeline.NewStructuredValues(p.PolicyConfiguration)},
+				{Name: "PUBLIC_KEY", Value: *pipeline.NewStructuredValues(p.PublicKey)},
+				{Name: "STRICT", Value: *pipeline.NewStructuredValues(strconv.FormatBool(p.Strict))},
+				{Name: "EFFECTIVE_TIME", Value: *pipeline.NewStructuredValues(p.EffectiveTime)},
+				{Name: "SSL_CERT_DIR", Value: *pipeline.NewStructuredValues(sslCertDir)},
+			},
+			TaskRunTemplate: pipeline.PipelineTaskRunTemplate{
+				ServiceAccountName: constants.DefaultPipelineServiceAccount,
+			},
+		},
+	}, nil
 }
 
 func CreatePVC(pvcs v1.PersistentVolumeClaimInterface, pvcName string) error {

@@ -125,6 +125,52 @@ The pipeline clones the CLI repo, builds the `ec` binary, layers it onto `quay.i
 
 When both params are empty (the default), the pipeline uses the standard task bundle and released CLI image.
 
+#### Testing an ITS pipeline change
+
+The E2E test source and the ITS pipeline source are selected independently:
+
+| Pipeline parameter | Purpose | Default |
+|--------------------|---------|---------|
+| `git-url`, `revision` | E2E test repository and revision | `conforma/e2e-tests`, `main` |
+| `its-pipeline-repo-url` | Repository containing the ITS definition (use the PR source repository for forks) | `https://github.com/conforma/cli` |
+| `its-pipeline-revision` | Pipeline source revision (use the exact PR head SHA in CI) | `main` |
+| `its-pipeline-path` | Pipeline YAML within that repository | `pipelines/enterprise-contract/0.1/enterprise-contract.yaml` |
+| `test-label-filter` | Ginkgo suites to execute | `ec \|\| its-pipeline` |
+
+For example, after applying the E2E pipeline definition:
+
+```bash
+tkn pipeline start conforma-e2e-pipeline \
+  --param git-url=https://github.com/conforma/e2e-tests.git \
+  --param revision=<e2e-suite-commit-sha> \
+  --param its-pipeline-repo-url=https://github.com/<pr-author>/cli.git \
+  --param its-pipeline-revision=<cli-pr-head-sha> \
+  --param test-label-filter=its-pipeline \
+  --param oci-container-repo=quay.io/conforma/e2e-tests \
+  --param oci-container-repo-credentials-secret=konflux-test-infra \
+  --use-param-defaults \
+  --showlog
+```
+
+The runner exports `ITS_PIPELINE_REPO_URL`, `ITS_PIPELINE_REVISION`, and
+`ITS_PIPELINE_PATH` to the tests. The tests use these values in Tekton's Git
+resolver to run the proposed pipeline definition. The runner logs the selected
+repository, revision, and path. These settings do not build a custom CLI image;
+the ITS definition retains its own task bundle references.
+
+The suite checks successful validation, strict policy rejection, and non-strict
+failure reporting. It checks overall PipelineRun status and the exported
+`TEST_OUTPUT` for successful PipelineRuns, as well as the verification task's
+result. A strict rejection must also report a policy failure, so an unrelated
+verification task error cannot satisfy that scenario.
+
+CLI-side PR CI must pass the CLI PR source URL and head SHA to these parameters.
+Running the E2E repository's own PR CI alone does not gate pipeline source changes.
+Before considering the integration complete, verify a passing CLI PR run and a
+failing run with an intentionally invalid task bundle reference. Confirm that the
+failure is reported on the CLI PR's head commit and that its merge policy requires
+successful validation for pipeline changes.
+
 #### Option B: Run directly against an existing Konflux cluster
 
 If you already have a Konflux cluster running:
@@ -133,7 +179,7 @@ If you already have a Konflux cluster running:
 export KUBECONFIG=/path/to/your/kubeconfig
 export QUAY_TOKEN="$(base64 -w0 < ~/.docker/config.json)"
 export TEST_ENVIRONMENT=upstream
-go run github.com/onsi/ginkgo/v2/ginkgo -v --label-filter="ec" ./cmd
+go run github.com/onsi/ginkgo/v2/ginkgo -v --label-filter="ec || its-pipeline" ./cmd
 ```
 
 Or using the Makefile:
@@ -156,6 +202,9 @@ make test-e2e
 | `E2E_APPLICATIONS_NAMESPACE` | No | Override the generated test namespace |
 | `CUSTOM_EC_CLI_IMAGE` | No | Custom CLI container image (set automatically by the pipeline when `custom-ec-cli-url` is provided) |
 | `CUSTOM_EC_TASK_YAML` | No | Path to task YAML to patch with the custom image (set automatically by the pipeline) |
+| `ITS_PIPELINE_REPO_URL` | No | ITS pipeline source repository; defaults to `https://github.com/conforma/cli` |
+| `ITS_PIPELINE_REVISION` | No | ITS pipeline source branch or commit; defaults to `main` |
+| `ITS_PIPELINE_PATH` | No | ITS pipeline YAML path; defaults to `pipelines/enterprise-contract/0.1/enterprise-contract.yaml` |
 | `KLOG_VERBOSITY` | No | Kubernetes client logging verbosity (default: `1`) |
 
 ### Project structure
