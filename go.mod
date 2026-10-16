@@ -6,7 +6,7 @@ require (
 	github.com/conforma/crds/api v0.1.26
 	github.com/devfile/library/v2 v2.4.0
 	github.com/konflux-ci/application-api v0.0.0-20260927062134-a189c1676a85
-	github.com/onsi/ginkgo/v2 v2.33.0
+	github.com/onsi/ginkgo/v2 v2.33.1
 	github.com/onsi/gomega v1.44.0
 	github.com/tektoncd/pipeline v1.17.0
 	gopkg.in/yaml.v2 v2.4.0
