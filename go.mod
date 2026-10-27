@@ -3,7 +3,7 @@ module github.com/conforma/e2e-tests
 go 1.27.0
 
 require (
-	github.com/conforma/crds/api v0.1.37
+	github.com/conforma/crds/api v0.1.38
 	github.com/devfile/library/v2 v2.4.0
 	github.com/konflux-ci/application-api v0.0.0-20260927062134-a189c1676a85
 	github.com/onsi/ginkgo/v2 v2.33.1
